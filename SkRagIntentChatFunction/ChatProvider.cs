@@ -55,8 +55,26 @@
 
             var intent = await Util.GetIntent(_chat, chatRequest.prompt);
 
+            // if the intent has "-image" appended, we will need to use assistant API to generate the image
+            // once the response is received, so determine if this is part of the intent, then strip it off
+            // so we can process the root intent
+            bool renderImageWithResponse = intent.EndsWith("-image");
+
+            if (renderImageWithResponse) {
+                intent = intent.Substring(0, intent.Length - "-image".Length);
+            }
+
+            // all database intents will the same thing, so in the switch statement we'll build the
+            // schemas based on the type of database intent and then build and add the system and
+            // user messages to the chat history outside of the switch so it isn't duplicated
+            bool databaseIntent = false;
+
+            var dbSchema = "";
+            // TODO: utilize NL2SQL to get only tables related to products
+            var jsonSchema = "";
+
             // The purpose of using an Intent pattern is to allow you to make decisions about how you want to invoke the LLM.
-            // In the case of RAG, if you can detect hte user intent is related to searching manuals, then you can perform
+            // In the case of RAG, if you can detect the user intent is related to searching manuals, then you can perform
             // only that action when the intent is to search manuals. This allows you to reduce the token usage and
             // save you TPM and cost
             switch (intent)
@@ -72,63 +90,38 @@
 
                         break;
                     }
-                case "databasewithoutimage":
+                case "databaseproduct":
                     {
+                        databaseIntent = true;
+
                         // At this point we know the intent is database related so we could just call the plugin
                         // directly like the manuals above, but since we have AutoInvokeKernelFunctions enabled,
                         // we can just let SK detect that it needs to call the function and let it do it. However,
                         // it would be more performant to just call it directly as there is additional overhead
                         // with SK searching the plugin collection.
-                        Console.WriteLine("Intent: database without image");
+                        Console.WriteLine("Intent: databaseproduct");
 
-                        var dbSchema = Util.GetDatabaseSchema();
-                        var jsonSchema = Util.GetDatabaseJsonSchema(false);
-
-                        var systemPrompt = $@"You are responsible for generating and executing a SQL query in response to user input.
-                                              Only target the tables described in the given database schema.
-
-                                              1. Generate a query that is always entirely based on the targeted database schema.
-                                              2. Execute the query using the available plugin.
-                                              3. Summarize the results to the user.
-
-                                              The database schema is described according to the following json schema:
-                                              {jsonSchema}
-
-                                              The targeted database schema is described by the following json:
-                                              {dbSchema}
-                                              ";
-
-                        _chatHistory.AddSystemMessage(systemPrompt);
-                        _chatHistory.AddUserMessage(chatRequest.prompt);
+                        dbSchema = Util.GetDatabaseSchema();
+                        // TODO: utilize NL2SQL to get only tables related to products
+                        jsonSchema = Util.GetDatabaseJsonSchema(false);
+                        
                         break;
                     }
-                case "databasewithimage":
+                case "databasecustomer":
                     {
+                        databaseIntent = true;
+
                         // At this point we know the intent is database related so we could just call the plugin
                         // directly like the manuals above, but since we have AutoInvokeKernelFunctions enabled,
                         // we can just let SK detect that it needs to call the function and let it do it. However,
                         // it would be more performant to just call it directly as there is additional overhead
                         // with SK searching the plugin collection.
-                        Console.WriteLine("Intent: database with image");
+                        Console.WriteLine("Intent: databasecustomer");
 
-                        var dbSchema = Util.GetDatabaseSchema();
-                        var jsonSchema = Util.GetDatabaseJsonSchema(false);
+                        dbSchema = Util.GetDatabaseSchema();
+                        // TODO: utilize NL2SQL to get only tables related to customers
+                        jsonSchema = Util.GetDatabaseJsonSchema(false);
 
-                        var systemPrompt = $@"You are responsible for generating and executing a SQL query in response to user input.
-                                              Only target the tables described in the given database schema.
-
-                                              1. Generate the query.
-                                              2. Execute the query using the available plugin.
-                                              3. Summarize the results to the user. 
-
-                                              The database schema is described according to the following json schema:
-                                              {jsonSchema}
-
-                                              The targeted database schema is described by the following json:
-                                              {dbSchema}
-                                              ";
-
-                        _chatHistory.AddUserMessage(chatRequest.prompt);
                         break;
                     }
                 case "not_found":
@@ -136,6 +129,26 @@
                         Console.WriteLine("Intent: not_found");
                         break;
                     }
+            }
+
+            if (databaseIntent)
+            {
+                var systemPrompt = $@"You are responsible for generating and executing a SQL query in response to user input.
+                                    Only target the tables described in the given database schema.
+
+                                    1. Generate a query that is always entirely based on the targeted database schema.
+                                    2. Execute the query using the available plugin.
+                                    3. Summarize the results to the user.
+
+                                    The database schema is described according to the following json schema:
+                                    {jsonSchema}
+
+                                    The targeted database schema is described by the following json:
+                                    {dbSchema}
+                                    ";
+
+                _chatHistory.AddSystemMessage(systemPrompt);
+                _chatHistory.AddUserMessage(chatRequest.prompt);
             }
 
             ChatMessageContent result = null;
@@ -150,9 +163,12 @@
                     );
 
                 Console.WriteLine(result.Content);
+
+                if (renderImageWithResponse)
+                {
+                    Console.WriteLine("Use Assistant SDK to generate image from result");
+                }                
             }
-
-
 
             // We are going to call the SearchPlugin to see if we get any hits on the query, if we do add them to the chat history and let AI summarize it 
 

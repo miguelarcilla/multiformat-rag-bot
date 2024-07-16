@@ -18,26 +18,36 @@
 
             chatHistory.AddSystemMessage(
                 $@"Return the intent of the user. The intent must be one of the following strings:
-                    - databasewithimage: Use this intent to answer questions about product queries when an image is expected to depict the data.
-                    - databasewithoutimage: Use this intent to answer questions about product queries with text only.
+                    - databaseproduct: Use this intent to answer questions about product queries.
+                    - databaseproduct-image: Use this intent to answer questions about product queries and include an image.
+                    - databasecustomer: Use this intent to answer questions about customer queries.
+                    - databasecustomer-image: Use this intent to answer questions about customer queries and include an image.
                     - manual: Use this intent to answer questions about the Tesla manual.
-                    - not_found: Use this intent if you cannot find a suitable answer
+                    - not_found: Use this intent if you cannot find a suitable answer.
+                Do NOT include the word Intent in the intent response; only respond with the intent strings above.
 
-                [Examples for database type questions without images]
+                [Examples for database product questions]
                 User question: How many bikes are there?
-                Intent: database
+                Intent: databaseproduct
                 User question: Is the color red more popular than blue?
-                Intent: database
+                Intent: databaseproduct
                 User question: Retrieve the number of bikes in the warehouse.
-                Intent: database
+                Intent: databaseproduct
 
-                [Examples for database type questions with images]
+                [Examples for database customer questions]
+                User question: How many customers are registered?
+                Intent: databasecustomer
+                User question: How many customers are men?
+                Intent: databasecustomer
+                User question: How many customers are women?
+                Intent: databasecustomer
+
+                If the user asks for an image to describe the data, append the intent with -image. Examples of this
+                are shown below.
                 User question: How many bikes are there? Plot a bar chart of the number of bikes versus other products.
-                Intent: database
-                User question: How many red bikes are there? Plot a pie chart of different colors of bikes.
-                Intent: database
-                User question: Retrieve the number of products over $100. Plot a bar chart of the cost distribution of all products.
-                Intent: database
+                Intent: databaseproduct-image
+                User question: Plot the number of customers assigned to each salesperson in a bar chart.
+                Intent: databasecustomer-image
 
                 [Examples for manual type of questions]
                 User question: What type of battery does the car use?
@@ -68,14 +78,14 @@
 
                 string intentResult = string.Join(", ", result.Select(o => o.ToString()));
 
-                // use regex and Linq to find the intent that is repeated the most
-                var words = Regex.Split(intentResult.ToLower(), @"\W+")
-                    .Where(w => w.Length >= 3)
-                    .GroupBy(w => w)
-                    .OrderByDescending(g => g.Count())
-                    .First();
+                // Matches words containing hyphens
+                var wordFrequencies = Regex.Matches(intentResult.ToLower(), @"\b[\w-]+\b")
+                                          .Cast<Match>()
+                                          .Select(m => m.Value.ToLower())
+                                          .GroupBy(s => s)
+                                          .OrderByDescending(g => g.Count());
 
-                intent = words.Key;
+                intent = wordFrequencies.FirstOrDefault()?.Key;
             }
             catch (Exception ex)
             {
