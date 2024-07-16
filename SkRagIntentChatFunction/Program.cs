@@ -41,9 +41,9 @@
                 // Custom AzureAISearchService to configure request parameters and make a request.
                 builder.Services.AddSingleton<IAzureAISearchService, AzureAISearchService>();
 
-                #pragma warning disable SKEXP0011 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+                #pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
                 builder.AddAzureOpenAITextEmbeddingGeneration(EmbeddingModel, AzureOpenAiEndpoint, AzureOpenAiApiKey);
-                #pragma warning restore SKEXP0011 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+                #pragma warning restore SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
                 builder.Plugins.AddFromType<DBQueryPlugin>();
                 builder.Plugins.AddFromType<AzureAISearchPlugin>();

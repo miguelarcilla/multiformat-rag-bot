@@ -18,16 +18,25 @@
 
             chatHistory.AddSystemMessage(
                 $@"Return the intent of the user. The intent must be one of the following strings:
-                    - database: Use this intent to answer questions about HR queries.
+                    - databasewithimage: Use this intent to answer questions about product queries when an image is expected to depict the data.
+                    - databasewithoutimage: Use this intent to answer questions about product queries with text only.
                     - manual: Use this intent to answer questions about the Tesla manual.
                     - not_found: Use this intent if you cannot find a suitable answer
 
-                [Examples for database type questions]
-                User question: Who is my HR representative?
+                [Examples for database type questions without images]
+                User question: How many bikes are there?
                 Intent: database
-                User question: Retrieve my current level
+                User question: Is the color red more popular than blue?
                 Intent: database
-                User question: Retrieve my current salary
+                User question: Retrieve the number of bikes in the warehouse.
+                Intent: database
+
+                [Examples for database type questions with images]
+                User question: How many bikes are there? Plot a bar chart of the number of bikes versus other products.
+                Intent: database
+                User question: How many red bikes are there? Plot a pie chart of different colors of bikes.
+                Intent: database
+                User question: Retrieve the number of products over $100. Plot a bar chart of the cost distribution of all products.
                 Intent: database
 
                 [Examples for manual type of questions]
@@ -68,7 +77,7 @@
 
                 intent = words.Key;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Console.WriteLine(ex.Message);
             }
@@ -76,62 +85,728 @@
             return intent;
         }
 
-        public static string GetDatabasePrompt(bool isAdmin)
+        public static string GetDatabaseJsonSchema(bool isAdmin)
         {
-            var columns = @"positioncode:Unique identifier for position records. Users will refer to this as “Position ID.” For example, if a user asks “What is Tom Smith’s Position ID?” they are referring to this field,
-                                country: Country of the position, 
-                                jobtitle: Job Title of a position associated with a PositionCode. Refers to the specific role or position title that an individual holds within the organization,
-                                function:Position business function, for example - Marketing, Engineering, etc.,
-                                fte: Indicates whether an employee is full-time or part-time. FTP of 1 means Full Time. FTP less than 1 means part time,
-                                fullname: Name of the person associated with an EmployeeCode., 
-                                pcr:Position Count Rollup. Total number of In Org, Non-excluded positions that sit under a manager including the manager itself. When a user asks “How many positions are in Tom Smith’s organization,” they are looking for PCR,
-                                layer:This holds an integer value that indicates a position’s or employee’s relative distance from the CEO. For example, if the CEO is in Layer 1, then the CEO’s direct reports are in Layer 2.,
-                                soc:Span of control. The number of In Org, non-excluded positions that report directly to a manager,
-                                ismanager: TRUE identifies positions with direct reports,
-                                empfunction:, 
-                                ftp: Indicates whether a position is full - time or part - time.FTP of 1 means Full Time.FTP less than 1 means part time.,
-                                empjobtitle:,
-                                isexcludedfromanalysis: Indicates that a position is not counted in a manager’s SOC or PCR.,
-                                emplayer:,
-                                employeecode: Unique identifier for employee records. Users will refer to this as “Employee ID.” For example, if a user asks “What is Tom Smith’s Employee ID ?” they are referring to this field.
-                                empcountry: Country of the employee.,
-                                layersbelow: Indicates the total number of layers below a position,
-                                trc:Total Record Count.Total number of records that sit under a manager,
-                                level: used to indicate a position’s pay grade or rank within the organization,
-                                isic:TRUE indicates a position with no direct reports.,
-                                supervisorcode: PositionCode of the position that another position or employee reports to.Users will refer to this as “Supervisor ID.” For example, if a user asks “What is Tom Smith’s Supervisor ID ?” they are referring to this field.,
-                                status: Positions that are closed will have a status of 'Closed Positions'. 'In Org' indicates a position that is part of the organization and is not closed. Positions with statuses other than “In Org” should not be counted when asked about Totals, Medians, or Averages.For example, if a user asks “What is the average cost of my Marketing function ?” only analyze positions with the status “In Org”.,
-                                isnewposition:When TRUE, Identifies new positions that did not exist in the baseline,
-                                issupervisorchanged:When TRUE, identifies positions whose supervisor has changed since the baseline,";
+            var jsonSchema = """
+                  {
+                  "$schema": "http://json-schema.org/draft-07/schema#",
+                  "description": "Describes tables and views to be used querying a SQL database",
+                  "type": "object",
+                  "properties": {
+                    "Name": {
+                	  "description": "The database name",
+                      "type": "string"
+                    },
+                    "Platform": {
+                      "description": "The targeted SQL service platform",
+                      "type": "string"
+                    },
+                    "Description": {
+                      "description": "A functional decription of the database",
+                      "type": "string"
+                    },
+                    "Tables": {
+                      "description": "A list of table and view definitions",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "Name": {
+                            "description": "The name of the table or view",
+                            "type": "string"
+                          },
+                          "Description": {
+                            "description": "The description of the table",
+                            "type": "string"
+                          },
+                          "Columns": {
+                            "description": "A list of column definitions",
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "Name": {
+                                  "description": "The name of the column",
+                                  "type": "string"
+                                },
+                                "Description": {
+                                  "description": "Describes the column",
+                                  "type": "string"
+                                },
+                                "Type": {
+                                  "description": "The type of the column",
+                                  "type": "string"
+                                },
+                                "IsPrimary": {
+                                  "description": "Indicates if the column is part of the primary key",
+                                  "type": "boolean"
+                                },
+                                "ReferencedTable": {
+                                  "description": "The name of the table referenced, if this column has a foreign key relationship to another table.",
+                                  "type": "string"
+                                },
+                                "ReferencedColumn": {
+                                  "description": "The name of the column referenced, if this column has a foreign key relationship to another table.",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "Name",
+                                "Type"
+                              ]
+                            }
+                          },
+                          "IsView": {
+                            "description": "Indicates if the described table is actually a view",
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "Name",
+                          "Columns"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "Name",
+                    "Platform",
+                    "Tables"
+                  ]
+                }
+                """;
 
-            if (isAdmin) columns += @"
-                                compensation: Cost or salary of a position. Use this field when users ask about total or average cost, or when they ask about a position’s or employee’s salary.,
-                                positionid:This is a database field that captures the unique identifier for position records. It has no meaning to users.Do not mention this field when answering a user query.If a user asks about Position ID, they are referring to PositionCode,
-                                employeeid:This is a database field that captures the unique identifier for employee records. It has no meaning to users.Do not mention this field when answering a user query.If a user asks about Employee ID, they are referring to EmployeeCode,
-                                uniquepositionrefid:This is a database field that has no meaning to users.Do not mention this field when answering a user query,
-                                uniqueemployeerefid:This is a database field that has no meaning to users.Do not mention this field when answering a user query,
-                                Layer 1:,
-                                Layer 1 Name:,
-                                Layer 2:,
-                                Layer 2 Name:,
-                                Layer 3:,
-                                Layer 3 Name:,
-                                Layer 4:,
-                                Layer 4 Name:,
-                                Layer 5:,
-                                Layer 5 Name:,
-                                Layer 6:,
-                                Layer 6 Name:,
-                                Layer 7:,
-                                Layer 7 Name:,
-                                Layer 8:,
-                                Layer 8 Name:, ";
-            return @$"The plugin return the following data for each position:
-                                {columns}
-                                Provide detailed explanations of any calculations.
-                                Use only these columns to generate the query. Don't guess. If you need more information, ask the user for additional information.
-                                User may be retricted to access other fields";
+            return jsonSchema;
+        }
 
+        public static string GetDatabaseSchema()
+        {
+            var databaseSchema =
+                """
+                  {
+                  "Name": "AdventureWorksLT",
+                  "Platform": "Microsoft SQL Server",
+                  "Description": "Product, sales, and customer data for the AdentureWorks company.",
+                  "Tables": [
+                    {
+                      "Name": "SalesLT.Address",
+                      "Columns": [
+                        {
+                          "Name": "AddressID",
+                          "Type": "int",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "AddressLine1",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "AddressLine2",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "City",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "CountryRegion",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "PostalCode",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        },
+                        {
+                          "Name": "StateProvince",
+                          "Type": "nvarchar"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.Customer",
+                      "Columns": [
+                        {
+                          "Name": "CustomerID",
+                          "Type": "int",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "CompanyName",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "EmailAddress",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "FirstName",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "LastName",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "MiddleName",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "NameStyle",
+                          "Type": "bit"
+                        },
+                        {
+                          "Name": "Phone",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        },
+                        {
+                          "Name": "SalesPerson",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Suffix",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Title",
+                          "Type": "nvarchar"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.CustomerAddress",
+                      "Columns": [
+                        {
+                          "Name": "AddressID",
+                          "Type": "int",
+                          "IsPrimary": true,
+                          "ReferencedTable": "SalesLT.Address",
+                          "ReferencedColumn": "AddressID"
+                        },
+                        {
+                          "Name": "CustomerID",
+                          "Type": "int",
+                          "IsPrimary": true,
+                          "ReferencedTable": "SalesLT.Customer",
+                          "ReferencedColumn": "CustomerID"
+                        },
+                        {
+                          "Name": "AddressType",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.Product",
+                      "Columns": [
+                        {
+                          "Name": "ProductID",
+                          "Type": "int",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "Color",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "DiscontinuedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "ListPrice",
+                          "Type": "money"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "Name",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ProductCategoryID",
+                          "Type": "int",
+                          "ReferencedTable": "SalesLT.ProductCategory",
+                          "ReferencedColumn": "ProductCategoryID"
+                        },
+                        {
+                          "Name": "ProductModelID",
+                          "Type": "int",
+                          "ReferencedTable": "SalesLT.ProductModel",
+                          "ReferencedColumn": "ProductModelID"
+                        },
+                        {
+                          "Name": "ProductNumber",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        },
+                        {
+                          "Name": "SellEndDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "SellStartDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "Size",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "StandardCost",
+                          "Type": "money"
+                        },
+                        {
+                          "Name": "ThumbNailPhoto",
+                          "Type": "varbinary"
+                        },
+                        {
+                          "Name": "ThumbnailPhotoFileName",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Weight",
+                          "Type": "decimal"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.ProductCategory",
+                      "Columns": [
+                        {
+                          "Name": "ProductCategoryID",
+                          "Type": "int",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "Name",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ParentProductCategoryID",
+                          "Type": "int",
+                          "ReferencedTable": "SalesLT.ProductCategory",
+                          "ReferencedColumn": "ProductCategoryID"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.ProductDescription",
+                      "Columns": [
+                        {
+                          "Name": "ProductDescriptionID",
+                          "Type": "int",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "Description",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.ProductModel",
+                      "Columns": [
+                        {
+                          "Name": "ProductModelID",
+                          "Type": "int",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "CatalogDescription",
+                          "Type": "xml"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "Name",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.ProductModelProductDescription",
+                      "Columns": [
+                        {
+                          "Name": "Culture",
+                          "Type": "nchar",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "ProductDescriptionID",
+                          "Type": "int",
+                          "IsPrimary": true,
+                          "ReferencedTable": "SalesLT.ProductDescription",
+                          "ReferencedColumn": "ProductDescriptionID"
+                        },
+                        {
+                          "Name": "ProductModelID",
+                          "Type": "int",
+                          "IsPrimary": true,
+                          "ReferencedTable": "SalesLT.ProductModel",
+                          "ReferencedColumn": "ProductModelID"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.SalesOrderDetail",
+                      "Columns": [
+                        {
+                          "Name": "SalesOrderDetailID",
+                          "Type": "int",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "SalesOrderID",
+                          "Type": "int",
+                          "IsPrimary": true,
+                          "ReferencedTable": "SalesLT.SalesOrderHeader",
+                          "ReferencedColumn": "SalesOrderID"
+                        },
+                        {
+                          "Name": "LineTotal",
+                          "Type": "numeric"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "OrderQty",
+                          "Type": "smallint"
+                        },
+                        {
+                          "Name": "ProductID",
+                          "Type": "int",
+                          "ReferencedTable": "SalesLT.Product",
+                          "ReferencedColumn": "ProductID"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        },
+                        {
+                          "Name": "UnitPrice",
+                          "Type": "money"
+                        },
+                        {
+                          "Name": "UnitPriceDiscount",
+                          "Type": "money"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.SalesOrderHeader",
+                      "Columns": [
+                        {
+                          "Name": "SalesOrderID",
+                          "Type": "int",
+                          "IsPrimary": true
+                        },
+                        {
+                          "Name": "AccountNumber",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "BillToAddressID",
+                          "Type": "int",
+                          "ReferencedTable": "SalesLT.Address",
+                          "ReferencedColumn": "AddressID"
+                        },
+                        {
+                          "Name": "Comment",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "CreditCardApprovalCode",
+                          "Type": "varchar"
+                        },
+                        {
+                          "Name": "CustomerID",
+                          "Type": "int",
+                          "ReferencedTable": "SalesLT.Customer",
+                          "ReferencedColumn": "CustomerID"
+                        },
+                        {
+                          "Name": "DueDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "Freight",
+                          "Type": "money"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "OnlineOrderFlag",
+                          "Type": "bit"
+                        },
+                        {
+                          "Name": "OrderDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "PurchaseOrderNumber",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "RevisionNumber",
+                          "Type": "tinyint"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        },
+                        {
+                          "Name": "SalesOrderNumber",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ShipDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "ShipMethod",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ShipToAddressID",
+                          "Type": "int",
+                          "ReferencedTable": "SalesLT.Address",
+                          "ReferencedColumn": "AddressID"
+                        },
+                        {
+                          "Name": "Status",
+                          "Type": "tinyint"
+                        },
+                        {
+                          "Name": "SubTotal",
+                          "Type": "money"
+                        },
+                        {
+                          "Name": "TaxAmt",
+                          "Type": "money"
+                        },
+                        {
+                          "Name": "TotalDue",
+                          "Type": "money"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.vGetAllCategories",
+                      "IsView": true,
+                      "Columns": [
+                        {
+                          "Name": "ParentProductCategoryName",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ProductCategoryID",
+                          "Type": "int"
+                        },
+                        {
+                          "Name": "ProductCategoryName",
+                          "Type": "nvarchar"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.vProductAndDescription",
+                      "IsView": true,
+                      "Columns": [
+                        {
+                          "Name": "Culture",
+                          "Type": "nchar"
+                        },
+                        {
+                          "Name": "Description",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Name",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ProductID",
+                          "Type": "int"
+                        },
+                        {
+                          "Name": "ProductModel",
+                          "Type": "nvarchar"
+                        }
+                      ]
+                    },
+                    {
+                      "Name": "SalesLT.vProductModelCatalogDescription",
+                      "IsView": true,
+                      "Columns": [
+                        {
+                          "Name": "BikeFrame",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Color",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Copyright",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Crankset",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "MaintenanceDescription",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Manufacturer",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Material",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ModifiedDate",
+                          "Type": "datetime"
+                        },
+                        {
+                          "Name": "Name",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "NoOfYears",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Pedal",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "PictureAngle",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "PictureSize",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ProductLine",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ProductModelID",
+                          "Type": "int"
+                        },
+                        {
+                          "Name": "ProductPhotoID",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "ProductURL",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "RiderExperience",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "rowguid",
+                          "Type": "uniqueidentifier"
+                        },
+                        {
+                          "Name": "Saddle",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Style",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Summary",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "WarrantyDescription",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "WarrantyPeriod",
+                          "Type": "nvarchar"
+                        },
+                        {
+                          "Name": "Wheel",
+                          "Type": "nvarchar"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+
+            return databaseSchema;
         }
     }
 }
