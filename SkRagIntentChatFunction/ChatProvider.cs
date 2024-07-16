@@ -72,25 +72,61 @@
 
                         break;
                     }
-                case "database":
+                case "databasewithoutimage":
                     {
                         // At this point we know the intent is database related so we could just call the plugin
                         // directly like the manuals above, but since we have AutoInvokeKernelFunctions enabled,
                         // we can just let SK detect that it needs to call the function and let it do it. However,
                         // it would be more performant to just call it directly as there is additional overhead
                         // with SK searching the plugin collection.
-                        Console.WriteLine("Intent: database");
+                        Console.WriteLine("Intent: database without image");
 
-                        var dbSchema = Util.GetDatabasePrompt(false);
+                        var dbSchema = Util.GetDatabaseSchema();
+                        var jsonSchema = Util.GetDatabaseJsonSchema(false);
 
-                        var systemPrompt = $@"You are a friendly AI assistant that responds to user queries from the company database table.
-                                              The table contains organizational hierarchical position and employee details and the table schema is:
+                        var systemPrompt = $@"You are responsible for generating and executing a SQL query in response to user input.
+                                              Only target the tables described in the given database schema.
+
+                                              1. Generate a query that is always entirely based on the targeted database schema.
+                                              2. Execute the query using the available plugin.
+                                              3. Summarize the results to the user.
+
+                                              The database schema is described according to the following json schema:
+                                              {jsonSchema}
+
+                                              The targeted database schema is described by the following json:
                                               {dbSchema}
-                                              You are responsible for fetching the hierarchical position and employee detials using the appropriate plugin.
-                                              You are also responsible for filtering data based on user input.
-                                              User can request data using full or partial employee full name or job title.
-                                              Give details in bullet points if possible.
-                                              Summarize the provided data without using any additional external information or personal knowledge.";
+                                              ";
+
+                        _chatHistory.AddSystemMessage(systemPrompt);
+                        _chatHistory.AddUserMessage(chatRequest.prompt);
+                        break;
+                    }
+                case "databasewithimage":
+                    {
+                        // At this point we know the intent is database related so we could just call the plugin
+                        // directly like the manuals above, but since we have AutoInvokeKernelFunctions enabled,
+                        // we can just let SK detect that it needs to call the function and let it do it. However,
+                        // it would be more performant to just call it directly as there is additional overhead
+                        // with SK searching the plugin collection.
+                        Console.WriteLine("Intent: database with image");
+
+                        var dbSchema = Util.GetDatabaseSchema();
+                        var jsonSchema = Util.GetDatabaseJsonSchema(false);
+
+                        var systemPrompt = $@"You are responsible for generating and executing a SQL query in response to user input.
+                                              Only target the tables described in the given database schema.
+
+                                              1. Generate the query.
+                                              2. Execute the query using the available plugin.
+                                              3. Summarize the results to the user. 
+
+                                              The database schema is described according to the following json schema:
+                                              {jsonSchema}
+
+                                              The targeted database schema is described by the following json:
+                                              {dbSchema}
+                                              ";
 
                         _chatHistory.AddUserMessage(chatRequest.prompt);
                         break;

@@ -8,15 +8,15 @@
         private static bool _hrToggleContact;
 
         [KernelFunction]
-        [Description("Allows a user find who their HR contact is based on the location that they pass in.  If Location is not provided then set it to null")]
-        public static string GetHRContact([Description("Return who the HR Contact is for the user")] string query, string location)
+        [Description("Executes a SQL query to provide information about a product.")]
+        public static string GetProductDetails(string query)
         {
-            if (location == null)
-            {
-                return "Please provide the location information?";
-            }
+            Console.WriteLine(query);
 
-            if (_hrToggleContact)
+            string results = "";
+
+            return results;
+            /*if (_hrToggleContact)
             {
                 _hrToggleContact = false;
                 return "Your HR contact is Steve Smith";
@@ -27,7 +27,7 @@
                 return "Your HR contact is Lisa Jones";
             }
 
-            return "Test Response";
+            return "Test Response";*/
         }
     }
 }
