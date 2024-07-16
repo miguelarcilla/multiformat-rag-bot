@@ -40,8 +40,9 @@
 
                 // Custom AzureAISearchService to configure request parameters and make a request.
                 builder.Services.AddSingleton<IAzureAISearchService, AzureAISearchService>();
+                builder.Services.AddTransient<IAzureAIAssistantService>(a => new AzureAIAssistantService(AzureOpenAiEndpoint, AzureOpenAiApiKey, DeploymentName));
 
-                #pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+#pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
                 builder.AddAzureOpenAITextEmbeddingGeneration(EmbeddingModel, AzureOpenAiEndpoint, AzureOpenAiApiKey);
                 #pragma warning restore SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
