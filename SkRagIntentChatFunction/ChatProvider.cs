@@ -161,6 +161,22 @@
                                     1. Generate a query that is always entirely based on the targeted database schema.
                                     2. Execute the query using the available plugin.
                                     3. Summarize the results to the user.
+                                    4. If the user prompt asks for a file to be generated, please make sure it is a PNG, 
+                                       PPT, DOC, HTML, JPEG, JPG, GIF, PNG, XLS, or PDF only. There can not be any other
+                                       requested file type. If the file type if valid, append to your response the following: 
+                                       'FileType: <extension requested from user>'.
+
+                                       Examples:
+                                       User Prompt: In a bar chart, show me how many customers are aassigned to each salesperson. Save this as a powerpoint.
+                                       Appended response from step 4 above: FileType: PPT
+                                       User Prompt: Which month has the most sales? Plot each months sales for the most current year in a pie chart and save this as a PNG.
+                                       Appended response from step 4 above: FileType: PNG
+                                       User Prompt: In a bar chart, show me how many customers are aassigned to each salesperson.
+                                       Appended response from step 4 above: Nothing appended.
+
+                                       If the file type is not specified, do not append anything to the response.
+                                       If the file type is not valid, append the following statement: 'Invalid file type. Please choose from the following file types: PNG, PPT'
+                                       
 
                                     The database schema is described according to the following json schema:
                                     {jsonSchema}
@@ -185,24 +201,31 @@
 
                 Console.WriteLine(result.Content);
 
-                if (renderImageWithResponse)
+                if (renderImageWithResponse && !result.Content.Contains("Invalid file type"))
                 {
                     Console.WriteLine("Running Assistant to generate file.");
                     
                     var assistantName = $"Assistant - {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
-                    (string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files that I want.", $"Create a PNG image representing the following data:{result.Content}");
+                    (string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files that I want.", $"Create a PNG image representing the following data: {result.Content}");
 
                     Console.WriteLine("End running assistant to generate file.");
 
                     if (data != null)
                     {
-                        using (MemoryStream ms = new MemoryStream(data, false))
-                        {
-                            await _azureBlobService.UploadFromStreamAsync(ms, $"{assistantName}.png");
-                        }
+                        // Extract file type from response. If the filetype isn't specified, we are only rendering
+                        // the image in the respnose and not saving it
+                        var fileType = result.Content.Contains("FileType: ") ? result.Content.Substring(result.Content.IndexOf("FileType: ") + "FileType: ".Length) : String.Empty;
 
-                        var sasUri = _azureBlobService.GetBlobSasUri($"{assistantName}.png");
-                        response.SasUri = sasUri.ToString();
+                        if (!fileType.Equals(String.Empty))
+                        {
+                            using (MemoryStream ms = new MemoryStream(data, false))
+                            {
+                                await _azureBlobService.UploadFromStreamAsync(ms, $"{assistantName}.{fileType}");
+                            }
+
+                            var sasUri = _azureBlobService.GetBlobSasUri($"{assistantName}.{fileType}");
+                            response.SasUri = sasUri.ToString();
+                        }
                     }
                     else
                     {
@@ -213,6 +236,7 @@
                 }                
             }
 
+            // TODO: wrap the byte string in HTML as part of the response so it can be rendered in the browser
             response.ChatResponse = result.Content;
             
             // We are going to call the SearchPlugin to see if we get any hits on the query, if we do add them to the chat history and let AI summarize it 
