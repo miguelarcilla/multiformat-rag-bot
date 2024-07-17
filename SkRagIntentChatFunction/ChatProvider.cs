@@ -14,6 +14,7 @@
     using SkRagIntentChatFunction.Models;
     using Microsoft.AspNetCore.Mvc;
     using SkRagIntentChatFunction.Interfaces;
+    using SkRagIntentChatFunction.Services;
 
     public class ChatProvider
     {
@@ -21,6 +22,12 @@
         private readonly Kernel _kernel;
         private readonly IChatCompletionService _chat;
         private readonly ChatHistory _chatHistory;
+
+        private string _deploymentName = Environment.GetEnvironmentVariable("ApiDeploymentName", EnvironmentVariableTarget.Process) ?? string.Empty;
+        private string _azureOpenAiEndpoint = Environment.GetEnvironmentVariable("OpenAiEndpoint", EnvironmentVariableTarget.Process) ?? string.Empty;
+        private string _azureOpenAiApiKey = Environment.GetEnvironmentVariable("OpenAiApiKey", EnvironmentVariableTarget.Process) ?? string.Empty;
+
+        private AzureAIAssistantService _azureAIAssistantService;
 
         public ChatProvider(
             ILogger<ChatProvider> logger, 
@@ -31,6 +38,7 @@
             _kernel = kernel;
             _chat = chat;
             _chatHistory = chatHistory;
+            _azureAIAssistantService = new AzureAIAssistantService(_azureOpenAiEndpoint, _azureOpenAiApiKey, _deploymentName);
             // _kernel.ImportPluginFromObject(new TextAnalyticsPlugin(_client));
         }
 
@@ -171,10 +179,12 @@
 
                 if (renderImageWithResponse)
                 {
-                    //var assistantName = $"Assistant - {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
-                    //(string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files that I want.", $"Create a PNG image representing the following data:{result.Content}");
-                    //response.FileBytes = data;
+                    var assistantName = $"Assistant - {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
+                    (string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files that I want.", $"Create a PNG image representing the following data:{result.Content}");
+                    response.FileBytes = data;
                     Console.WriteLine("Use Assistant SDK to generate image from result");
+
+                    //await File.WriteAllBytesAsync("C:\\Temp\\test.PNG", data);
                 }                
             }
 
