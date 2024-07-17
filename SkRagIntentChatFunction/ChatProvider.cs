@@ -21,7 +21,6 @@
         private readonly Kernel _kernel;
         private readonly IChatCompletionService _chat;
         private readonly ChatHistory _chatHistory;
-        //private readonly IAzureAIAssistantService _azureAIAssistantService;
 
         public ChatProvider(
             ILogger<ChatProvider> logger, 
@@ -32,7 +31,6 @@
             _kernel = kernel;
             _chat = chat;
             _chatHistory = chatHistory;
-            //_azureAIAssistantService = azureAIAssistantService;
             // _kernel.ImportPluginFromObject(new TextAnalyticsPlugin(_client));
         }
 
@@ -152,8 +150,7 @@
                                     {jsonSchema}
 
                                     The targeted database schema is described by the following json:
-                                    {dbSchema}
-                                    ";
+                                    {dbSchema}";
 
                 _chatHistory.AddSystemMessage(systemPrompt);
                 _chatHistory.AddUserMessage(chatRequest.prompt);
