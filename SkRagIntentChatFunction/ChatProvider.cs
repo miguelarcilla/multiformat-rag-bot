@@ -12,25 +12,32 @@
     using Microsoft.SemanticKernel.Connectors.OpenAI;
     using System.IO;
     using SkRagIntentChatFunction.Models;
-    
+    using Microsoft.AspNetCore.Mvc;
+    using SkRagIntentChatFunction.Interfaces;
+
     public class ChatProvider
     {
         private readonly ILogger<ChatProvider> _logger;
         private readonly Kernel _kernel;
         private readonly IChatCompletionService _chat;
         private readonly ChatHistory _chatHistory;
+        //private readonly IAzureAIAssistantService _azureAIAssistantService;
 
-        public ChatProvider(ILogger<ChatProvider> logger, Kernel kernel, IChatCompletionService chat, ChatHistory chatHistory)
+        public ChatProvider(
+            ILogger<ChatProvider> logger, 
+            Kernel kernel, IChatCompletionService chat, 
+            ChatHistory chatHistory)
         {
             _logger = logger;
             _kernel = kernel;
             _chat = chat;
             _chatHistory = chatHistory;
+            //_azureAIAssistantService = azureAIAssistantService;
             // _kernel.ImportPluginFromObject(new TextAnalyticsPlugin(_client));
         }
 
         [Function("ChatProvider")]
-        public async Task<string> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
+        public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
         {
             // Request body example:
             /*
@@ -53,6 +60,7 @@
                 throw new ArgumentNullException("Please check your request body, you are missing required data.");
             }
 
+            var response = new ChatProviderResponse();
             var intent = await Util.GetIntent(_chat, chatRequest.prompt);
 
             // if the intent has "-image" appended, we will need to use assistant API to generate the image
@@ -69,9 +77,9 @@
             // user messages to the chat history outside of the switch so it isn't duplicated
             bool databaseIntent = false;
 
-            var dbSchema = "";
+            var dbSchema = string.Empty;
             // TODO: utilize NL2SQL to get only tables related to products
-            var jsonSchema = "";
+            var jsonSchema = string.Empty;
 
             // The purpose of using an Intent pattern is to allow you to make decisions about how you want to invoke the LLM.
             // In the case of RAG, if you can detect the user intent is related to searching manuals, then you can perform
@@ -166,10 +174,15 @@
 
                 if (renderImageWithResponse)
                 {
+                    //var assistantName = $"Assistant - {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
+                    //(string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files that I want.", $"Create a PNG image representing the following data:{result.Content}");
+                    //response.FileBytes = data;
                     Console.WriteLine("Use Assistant SDK to generate image from result");
                 }                
             }
 
+            response.ChatResponse = result.Content;
+            
             // We are going to call the SearchPlugin to see if we get any hits on the query, if we do add them to the chat history and let AI summarize it 
 
             // var function = _kernel.Plugins.GetFunction("AzureAISearchPlugin", "SimpleHybridSearch"); 
@@ -205,7 +218,6 @@
                 Console.WriteLine($"Token usage. Input tokens: {usage?.PromptTokens}; Output tokens: {usage?.CompletionTokens}; Total tokens: {usage?.TotalTokens}");
             }
 
-
             //  var func = _kernel.Plugins.TryGetFunction("AzureAISearchPlugin","SimpleHybridSearch", out function);
 
             /*HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
@@ -222,7 +234,7 @@
                 throw; // Re-throw the exception to propagate it further
             }*/
 
-            return result.Content;
+            return new OkObjectResult(response);
         }
     }
 }
