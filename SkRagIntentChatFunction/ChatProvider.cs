@@ -15,6 +15,7 @@
     using Microsoft.AspNetCore.Mvc;
     using SkRagIntentChatFunction.Interfaces;
     using SkRagIntentChatFunction.Services;
+    using System.Collections;
 
     public class ChatProvider
     {
@@ -28,6 +29,7 @@
         private string _azureOpenAiApiKey = Environment.GetEnvironmentVariable("OpenAiApiKey", EnvironmentVariableTarget.Process) ?? string.Empty;
 
         private AzureAIAssistantService _azureAIAssistantService;
+        private AzureBlobService _azureBlobService;
 
         public ChatProvider(
             ILogger<ChatProvider> logger, 
@@ -40,6 +42,12 @@
             _chatHistory = chatHistory;
             _azureAIAssistantService = new AzureAIAssistantService(_azureOpenAiEndpoint, _azureOpenAiApiKey, _deploymentName);
             // _kernel.ImportPluginFromObject(new TextAnalyticsPlugin(_client));
+
+            _azureBlobService = new AzureBlobService
+            {
+                ConnectionString = Environment.GetEnvironmentVariable("BlobConnectionString", EnvironmentVariableTarget.Process),
+                ContainerName = Environment.GetEnvironmentVariable("ContainerName", EnvironmentVariableTarget.Process)
+            };
         }
 
         [Function("ChatProvider")]
@@ -179,12 +187,29 @@
 
                 if (renderImageWithResponse)
                 {
+                    Console.WriteLine("Running Assistant to generate file.");
+                    
                     var assistantName = $"Assistant - {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
                     (string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files that I want.", $"Create a PNG image representing the following data:{result.Content}");
-                    response.FileBytes = data;
-                    Console.WriteLine("Use Assistant SDK to generate image from result");
 
-                    //await File.WriteAllBytesAsync("C:\\Temp\\test.PNG", data);
+                    Console.WriteLine("End running assistant to generate file.");
+
+                    if (data != null)
+                    {
+                        using (MemoryStream ms = new MemoryStream(data, false))
+                        {
+                            await _azureBlobService.UploadFromStreamAsync(ms, $"{assistantName}.png");
+                        }
+
+                        var sasUri = _azureBlobService.GetBlobSasUri($"{assistantName}.png");
+                        response.SasUri = sasUri.ToString();
+                    }
+                    else
+                    {
+                       Console.WriteLine("No data returned from assistant.");
+                    }
+                                        
+                    //await File.WriteAllBytesAsync($"C:\\Temp\\{assistantName}.png", data);
                 }                
             }
 

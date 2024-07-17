@@ -3,6 +3,7 @@
     public class ChatProviderResponse
     {
         public string ChatResponse { get; set; }
-        public byte[]? FileBytes { get; set; }
+        //public byte[]? FileBytes { get; set; }
+        public string SasUri { get; set; }
     }
 }
