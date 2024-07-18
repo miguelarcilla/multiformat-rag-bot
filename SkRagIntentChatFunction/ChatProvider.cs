@@ -16,6 +16,7 @@
     using SkRagIntentChatFunction.Interfaces;
     using SkRagIntentChatFunction.Services;
     using System.Collections;
+    using SemanticKernel.Data.Nl2Sql.Harness;
 
     public class ChatProvider
     {
@@ -63,6 +64,8 @@
                 }
             */
 
+            var sqlHarness = new SqlSchemaProviderHarness();
+
             _chatHistory.Clear();
 
             _logger.LogInformation("C# HTTP SentimentAnalysis trigger function processed a request.");
@@ -91,9 +94,9 @@
             // user messages to the chat history outside of the switch so it isn't duplicated
             bool databaseIntent = false;
 
-            var dbSchema = string.Empty;
-            // TODO: utilize NL2SQL to get only tables related to products
+            //var dbSchema = string.Empty;
             var jsonSchema = string.Empty;
+            string[] tableNames = null;
 
             // The purpose of using an Intent pattern is to allow you to make decisions about how you want to invoke the LLM.
             // In the case of RAG, if you can detect the user intent is related to searching manuals, then you can perform
@@ -123,10 +126,11 @@
                         // with SK searching the plugin collection.
                         Console.WriteLine("Intent: databaseproduct");
 
-                        dbSchema = Util.GetDatabaseSchema();
-                        // TODO: utilize NL2SQL to get only tables related to products
-                        jsonSchema = Util.GetDatabaseJsonSchema(false);
+                        //dbSchema = Util.GetDatabaseSchema();
                         
+                        tableNames = "SalesLT.Product,SalesLT.ProductCategory, SalesLT.ProductDescription, SalesLT.ProductModel,SalesLT.ProductModelProductDescription".Split(",");
+                        jsonSchema = await sqlHarness.ReverseEngineerSchemaJSONAsync(tableNames);
+
                         break;
                     }
                 case "databasecustomer":
@@ -140,9 +144,10 @@
                         // with SK searching the plugin collection.
                         Console.WriteLine("Intent: databasecustomer");
 
-                        dbSchema = Util.GetDatabaseSchema();
-                        // TODO: utilize NL2SQL to get only tables related to customers
-                        jsonSchema = Util.GetDatabaseJsonSchema(false);
+                        //dbSchema = Util.GetDatabaseSchema();
+                        
+                        tableNames = "SalesLT.Address,SalesLT.Customer, SalesLT.CustomerAddress".Split(",");
+                        jsonSchema = await sqlHarness.ReverseEngineerSchemaJSONAsync(tableNames);
 
                         break;
                     }
@@ -179,10 +184,10 @@
                                        
 
                                     The database schema is described according to the following json schema:
-                                    {jsonSchema}
+                                    {jsonSchema}";
 
-                                    The targeted database schema is described by the following json:
-                                    {dbSchema}";
+                                    //The targeted database schema is described by the following json:
+                                    //{dbSchema}";
 
                 _chatHistory.AddSystemMessage(systemPrompt);
                 _chatHistory.AddUserMessage(chatRequest.prompt);
