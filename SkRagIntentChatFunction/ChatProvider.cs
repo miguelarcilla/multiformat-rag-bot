@@ -163,25 +163,36 @@
                 var systemPrompt = $@"You are responsible for generating and executing a SQL query in response to user input.
                                     Only target the tables described in the given database schema.
 
+                                    Perform each of the following steps:
                                     1. Generate a query that is always entirely based on the targeted database schema.
                                     2. Execute the query using the available plugin.
                                     3. Summarize the results to the user.
-                                    4. If the user prompt asks for a file to be generated, please make sure it is a PNG, 
-                                       PPT, DOC, HTML, JPEG, JPG, GIF, PNG, XLS, or PDF only. There can not be any other
-                                       requested file type. If the file type if valid, append to your response the following: 
-                                       'FileType: <extension requested from user>'.
+                                    4. Summarize whether or not a file is requested to be saved or generated. In addition to providing the response from the previous steps, you will also respond with the type of file requested:
+                                        - Validate the file type (PNG, PPT, DOC, HTML, JPEG, JPG, GIF, PNG, XLS, or PDF).
+                                        - If valid, add to the response: FileType: <file type>
+                                        - If invalid, add to the response: InvalidFileType: <file type>. Please choose from the following file types: PNG, PPT, DOC, HTML, JPEG, JPG, GIF, PNG, XLS, or PDF.                                       
+                                        - If the file type is not specified, do not append anything to the response.
 
-                                       Examples:
-                                       User Prompt: In a bar chart, show me how many customers are aassigned to each salesperson. Save this as a powerpoint.
-                                       Appended response from step 4 above: FileType: PPT
-                                       User Prompt: Which month has the most sales? Plot each months sales for the most current year in a pie chart and save this as a PNG.
-                                       Appended response from step 4 above: FileType: PNG
-                                       User Prompt: In a bar chart, show me how many customers are aassigned to each salesperson.
-                                       Appended response from step 4 above: Nothing appended.
+                                        Examples:                                       
+                                        1. Valid File Request:
+                                            - User Prompt: 'In a bar chart, show me how many customers are aassigned to each salesperson. Save this as a powerpoint.'
+                                            - Response: '<response from steps 1 through 3>. FileType: PPT.'
+                                            This response must be added to the response you have from steps 1 through 3. If you do not include the response from steps 1 through 3, everything else will break. This response must start with 'FileType'. If you do not include 'FileType', everything else will break.
 
-                                       If the file type is not specified, do not append anything to the response.
-                                       If the file type is not valid, append the following statement: 'Invalid file type. Please choose from the following file types: PNG, PPT'
-                                       
+                                        2. Valid File Request:
+                                            - User Prompt: 'Which month has the most sales? Plot each months sales for the most current year in a pie chart and save this as a PNG.'
+                                            - Response: '<response from steps 1 through 3>. FileType: PNG.'
+                                            This response must be added to the response you have from steps 1 through 3. If you do not include the response from steps 1 through 3, everything else will break. This response must start with 'FileType'. If you do not include 'FileType', everything else will break.
+
+                                        3. Invalid File Request:
+                                            - User Prompt: 'In a bar chart, show me how many customers are assigned to each salesperson. Save this as a PBX.'
+                                            - Response: '<response from steps 1 through 3>. InvalidFileType: Please choose from the following file types: PNG, PPT, DOC, HTML, JPEG, JPG, GIF, PNG, XLS, or PDF.'
+                                            This response must be added to the response you have from steps 1 through 3. If you do not include the response from steps 1 through 3, everything else will break. This response must start with 'InvalidFileType'. If you do not include 'InvalidFileType', everything else will break.
+
+                                       4. No File Requested:
+                                            - User Prompt: 'In a bar chart, show me how many customers are assigned to each salesperson.'
+                                            - Response: '<response from steps 1 through 3>.'
+
 
                                     The database schema is described according to the following json schema:
                                     {jsonSchema}";
@@ -195,7 +206,7 @@
 
             ChatMessageContent result = null;
 
-            if (!intent.Equals("!found"))
+            if (!intent.Equals("not_found"))
             {
                 result = await _chat.GetChatMessageContentAsync
                     (
@@ -206,12 +217,12 @@
 
                 Console.WriteLine(result.Content);
 
-                if (renderImageWithResponse && !result.Content.Contains("Invalid file type"))
+                if (renderImageWithResponse && !result.Content.Contains("InvalidFileType"))
                 {
                     Console.WriteLine("Running Assistant to generate file.");
                     
                     var assistantName = $"Assistant - {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
-                    (string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files that I want.", $"Create a PNG image representing the following data: {result.Content}");
+                    (string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files requested by the user.", $"Create a file based on the following data: {result.Content}. The file will be built as specified from the following user prompt: {chatRequest.prompt}");
 
                     Console.WriteLine("End running assistant to generate file.");
 
@@ -239,6 +250,20 @@
                                         
                     //await File.WriteAllBytesAsync($"C:\\Temp\\{assistantName}.png", data);
                 }                
+            }
+            else
+            {
+                _chatHistory.AddSystemMessage("You are responsible to look in the history and understand what the user is asking about.");
+                _chatHistory.AddUserMessage(chatRequest.prompt);
+
+                result = await _chat.GetChatMessageContentAsync
+                    (
+                        _chatHistory,
+                        executionSettings: new OpenAIPromptExecutionSettings { Temperature = 0.8, TopP = 0.0, ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions },
+                        kernel: _kernel
+                    );
+
+                Console.WriteLine(result.Content);
             }
 
             // TODO: wrap the byte string in HTML as part of the response so it can be rendered in the browser
