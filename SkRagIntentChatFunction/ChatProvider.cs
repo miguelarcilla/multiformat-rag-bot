@@ -28,14 +28,17 @@
         private string _deploymentName = Environment.GetEnvironmentVariable("ApiDeploymentName", EnvironmentVariableTarget.Process) ?? string.Empty;
         private string _azureOpenAiEndpoint = Environment.GetEnvironmentVariable("OpenAiEndpoint", EnvironmentVariableTarget.Process) ?? string.Empty;
         private string _azureOpenAiApiKey = Environment.GetEnvironmentVariable("OpenAiApiKey", EnvironmentVariableTarget.Process) ?? string.Empty;
+        //private static string _cosmosDbConnection = Environment.GetEnvironmentVariable("CosmosDbConnection", EnvironmentVariableTarget.Process) ?? string.Empty;
 
         private AzureAIAssistantService _azureAIAssistantService;
         private AzureBlobService _azureBlobService;
+        private IAzureCosmosDbService _azureCosmosDbService;
 
         public ChatProvider(
             ILogger<ChatProvider> logger, 
             Kernel kernel, IChatCompletionService chat, 
-            ChatHistory chatHistory)
+            ChatHistory chatHistory,
+            IAzureCosmosDbService azureCosmosDbService)
         {
             _logger = logger;
             _kernel = kernel;
@@ -49,6 +52,8 @@
                 ConnectionString = Environment.GetEnvironmentVariable("BlobConnectionString", EnvironmentVariableTarget.Process),
                 ContainerName = Environment.GetEnvironmentVariable("ContainerName", EnvironmentVariableTarget.Process)
             };
+
+            _azureCosmosDbService = azureCosmosDbService;
         }
 
         [Function("ChatProvider")]
@@ -60,6 +65,7 @@
                     "userId": "stevesmith@contoso.com",
                     "sessionId": "12345678",
                     "tenantId": "00001",
+                    "chatName": "New Chat",
                     "prompt": "Hello, What can you do for me?"
                 }
             */
@@ -75,6 +81,12 @@
             if (chatRequest == null || chatRequest.userId == null || chatRequest.sessionId == null || chatRequest.tenantId == null || chatRequest.prompt == null)
             {
                 throw new ArgumentNullException("Please check your request body, you are missing required data.");
+            }
+
+            if (string.IsNullOrEmpty(chatRequest.sessionId))
+            {
+                // needed for new chats
+                chatRequest.sessionId = Guid.NewGuid().ToString();
             }
 
             var response = new ChatProviderResponse();
@@ -193,12 +205,8 @@
                                             - User Prompt: 'In a bar chart, show me how many customers are assigned to each salesperson.'
                                             - Response: '<response from steps 1 through 3>.'
 
-
                                     The database schema is described according to the following json schema:
                                     {jsonSchema}";
-
-                                    //The targeted database schema is described by the following json:
-                                    //{dbSchema}";
 
                 _chatHistory.AddSystemMessage(systemPrompt);
                 _chatHistory.AddUserMessage(chatRequest.prompt);
@@ -208,6 +216,31 @@
 
             if (!intent.Equals("not_found"))
             {
+                var session = new Session
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    SessionId = chatRequest.sessionId,
+                    Name = chatRequest.chatName,
+                    Type = "session",
+                    Timestamp = DateTime.UtcNow
+                };
+
+                var message = new Message()
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    
+                    Type = "message",
+                    Sender = "user",
+                    SessionId = chatRequest.sessionId,
+                    TimeStamp = DateTime.UtcNow,
+                    Prompt = chatRequest.prompt,
+                };
+
+                // insert session
+                await _azureCosmosDbService.InsertSessionAsync(session);
+                // Insert user prompt
+                await _azureCosmosDbService.InsertMessageAsync(message);
+
                 result = await _chat.GetChatMessageContentAsync
                     (
                         _chatHistory,
@@ -216,6 +249,19 @@
                     );
 
                 Console.WriteLine(result.Content);
+
+                // insert systems response
+                message = new Message()
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Type = "message",
+                    Sender = "system",
+                    SessionId = chatRequest.sessionId,
+                    TimeStamp = DateTime.UtcNow,
+                    Prompt = result.Content,
+                };
+
+                await _azureCosmosDbService.InsertMessageAsync(message);
 
                 if (renderImageWithResponse && !result.Content.Contains("InvalidFileType"))
                 {
@@ -253,6 +299,7 @@
             }
             else
             {
+                // TODO: Get chat history from cosmos db based on sessionId
                 _chatHistory.AddSystemMessage("You are responsible to look in the history and understand what the user is asking about.");
                 _chatHistory.AddUserMessage(chatRequest.prompt);
 
