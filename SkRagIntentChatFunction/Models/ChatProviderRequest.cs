@@ -6,6 +6,6 @@
         public string? sessionId { get; set; } = string.Empty;
         public string? tenantId { get; set; } = string.Empty;
         public string? prompt { get; set; } = string.Empty;
-
+        public string? chatName {  get; set; } = string.Empty;
     }
 }

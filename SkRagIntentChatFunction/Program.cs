@@ -15,13 +15,19 @@
     string AzureSearchEndpoint = Environment.GetEnvironmentVariable("SearchServiceEndpoint", EnvironmentVariableTarget.Process) ?? "";
     string AzureSearchKey = Environment.GetEnvironmentVariable("SearchServiceKey", EnvironmentVariableTarget.Process) ?? "";
     string EmbeddingModel = Environment.GetEnvironmentVariable("EmbeddingModel", EnvironmentVariableTarget.Process) ?? "";
+    string CosmosDbConnection = Environment.GetEnvironmentVariable("CosmosDbConnection", EnvironmentVariableTarget.Process) ?? string.Empty;
 
-    var host = new HostBuilder()
+var host = new HostBuilder()
         .ConfigureFunctionsWebApplication()
         .ConfigureServices(services =>
         {
             services.AddApplicationInsightsTelemetryWorkerService();
             services.ConfigureFunctionsApplicationInsights();
+            services.AddScoped<IAzureCosmosDbService>(s =>
+            {
+                var connectionString = CosmosDbConnection;
+                return new AzureCosmosDbService(connectionString);
+            });
 
             services.AddTransient<Kernel>(s =>
             {
@@ -40,7 +46,7 @@
 
                 // Custom AzureAISearchService to configure request parameters and make a request.
                 builder.Services.AddSingleton<IAzureAISearchService, AzureAISearchService>();
-                //builder.Services.AddSingleton(new AzureAIAssistantService(AzureOpenAiEndpoint, AzureOpenAiApiKey, DeploymentName));
+                //builder.Services.AddSingleto(n(new AzureAIAssistantService(AzureOpenAiEndpoint, AzureOpenAiApiKey, DeploymentName));
 
 #pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
                 builder.AddAzureOpenAITextEmbeddingGeneration(EmbeddingModel, AzureOpenAiEndpoint, AzureOpenAiApiKey);
@@ -54,11 +60,10 @@
 
             services.AddSingleton<IChatCompletionService>(sp =>
                 sp.GetRequiredService<Kernel>().GetRequiredService<IChatCompletionService>());
-            const string systemmsg = "You are a helpful friendly assistant that has knowledge of Org Builder Manuals.  You also have the ability to perform Org Build Database queries.  Do not answer any questions related to custom plugins or anything that is not related to the manuals or querying of the Org Builder Database.";
+            
             services.AddSingleton<ChatHistory>(s =>
             {
                 var chathistory = new ChatHistory();
-                chathistory.AddSystemMessage(systemmsg);
                 return chathistory;
             });
         })
