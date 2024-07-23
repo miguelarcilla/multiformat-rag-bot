@@ -28,7 +28,6 @@
         private string _deploymentName = Environment.GetEnvironmentVariable("ApiDeploymentName", EnvironmentVariableTarget.Process) ?? string.Empty;
         private string _azureOpenAiEndpoint = Environment.GetEnvironmentVariable("OpenAiEndpoint", EnvironmentVariableTarget.Process) ?? string.Empty;
         private string _azureOpenAiApiKey = Environment.GetEnvironmentVariable("OpenAiApiKey", EnvironmentVariableTarget.Process) ?? string.Empty;
-        //private static string _cosmosDbConnection = Environment.GetEnvironmentVariable("CosmosDbConnection", EnvironmentVariableTarget.Process) ?? string.Empty;
 
         private AzureAIAssistantService _azureAIAssistantService;
         private AzureBlobService _azureBlobService;
