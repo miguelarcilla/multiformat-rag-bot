@@ -48,6 +48,32 @@ namespace SkRagIntentChatFunction.Services
         }
 
         /// <summary>
+        /// Determines if a session exists in the database.
+        /// </summary>
+        /// <returns>True if the session exists; false otherwise</returns>
+        public async Task<bool> SessionExists(string sessionId)
+        {
+            bool sessionExists = false;
+
+            QueryDefinition query = new QueryDefinition("SELECT * FROM c WHERE c.SessionId = @sessionId and c.Type = 'session'")
+                .WithParameter("@sessionId", sessionId);
+
+            FeedIterator<Session> response = _chatContainer.GetItemQueryIterator<Session>(query);
+
+            if (response.HasMoreResults)
+            {
+                FeedResponse<Session> results = await response.ReadNextAsync();
+                
+                if (results.Count > 0 )
+                {
+                    sessionExists = true;
+                }
+            }
+
+            return sessionExists;
+        }
+
+        /// <summary>
         /// Gets a list of all current chat sessions.
         /// </summary>
         /// <returns>List of distinct chat session items.</returns>
@@ -74,9 +100,9 @@ namespace SkRagIntentChatFunction.Services
         /// <returns>List of chat message items for the specified session.</returns>
         public async Task<List<Message>> GetSessionMessagesAsync(string sessionId)
         {
-            QueryDefinition query = new QueryDefinition("SELECT * FROM c WHERE c.sessionId = @sessionId AND c.type = @type")
+            QueryDefinition query = new QueryDefinition("SELECT * FROM c WHERE c.SessionId = @sessionId AND c.Type = @type")
                 .WithParameter("@sessionId", sessionId)
-                .WithParameter("@type", nameof(Message));
+                .WithParameter("@type", nameof(Message).ToLower());
 
             FeedIterator<Message> results = _chatContainer.GetItemQueryIterator<Message>(query);
 

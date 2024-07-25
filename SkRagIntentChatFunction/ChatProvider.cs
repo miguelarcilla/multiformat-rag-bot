@@ -1,4 +1,6 @@
-﻿namespace SkRagIntentChatFunction
+﻿using SkRagIntentChatFunction.Models;
+
+namespace SkRagIntentChatFunction
 {
     using Microsoft.Extensions.Logging;
     using Microsoft.SemanticKernel.ChatCompletion;
@@ -17,6 +19,8 @@
     using SkRagIntentChatFunction.Services;
     using System.Collections;
     using SemanticKernel.Data.Nl2Sql.Harness;
+    using Google.Protobuf;
+    using Microsoft.Azure.Cosmos.Serialization.HybridRow;
 
     public class ChatProvider
     {
@@ -86,6 +90,22 @@
             {
                 // needed for new chats
                 chatRequest.sessionId = Guid.NewGuid().ToString();
+            }
+
+            // insert session if it doesn't already exist
+            bool sessionExists = await _azureCosmosDbService.SessionExists(chatRequest.sessionId);
+            if (!sessionExists)
+            {
+                Session session = new Session
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    SessionId = chatRequest.sessionId,
+                    Name = chatRequest.chatName,
+                    Type = "session",
+                    Timestamp = DateTime.UtcNow
+                };
+
+                await _azureCosmosDbService.InsertSessionAsync(session);
             }
 
             var response = new ChatProviderResponse();
@@ -165,6 +185,54 @@
                 case "not_found":
                     {
                         Console.WriteLine("Intent: not_found");
+
+                        // setting this to true assuming an image is being requested; if it is not and is a generic question, FileType will
+                        // not be returned and a file will not attempt to be generated
+                        renderImageWithResponse = true;
+
+                        var systemPrompt = $@"
+                                        You are responsible for checking the chat history to determine if an image or file is being requested to be generated as well
+                                        as what type of chart the user asked to be generated, such as a bar chart, histogram, pie chart, etc, and any specifics about
+                                        the chart such as number of slides, color of bars, etc. If a file was requested, you must respond with the kind of file/chart
+                                        the user asked for in the chat history as well as the data that was retrieved in the chat history. You must also respond with
+                                        the type of chart requested, which will be in a previous prompt in the chat history. If the current prompt is unrelated to
+                                        file generation, you will not reply with any historical context and must respond in a friendly manner to the best of your
+                                        ability based on the context of the user prompt, while also adding a keyword 'Unrelated'.
+                                        Perform each of the following steps if the user prompt is related to file generation:
+                                        1. Find in chat history the data returned from the result of a SQL query. You must respond with this data.
+                                        2. Find in chat history the type of chart the user requested. You must respond with this type of chart.
+                                        3. In the current user request, determine if any specifics are stated such as number of slides, color of bars, etc. You must repsond with this data.
+                                        3. In the current user request, validate the file type (PNG, PPT, DOC, HTML, JPEG, JPG, GIF, PNG, XLS, or PDF).
+                                          - If valid, add to the response: FileType: <file type>
+                                          - If invalid, add to the response: InvalidFileType: <file type>. Please choose from the following file types: PNG, PPT, DOC, HTML, JPEG, JPG, GIF, PNG, XLS, or PDF.                                       
+                                          - If the file type is not specified, do not append anything to the response.
+
+                                        Examples:                                       
+                                        1. Valid File Request:
+                                            - User Prompt: 'Save this as a powerpoint.'
+                                            - Response: '<Results from chat history including the data returned from the SQL query, the type of chart to be generated, such as bar chart, pie chart, histogram, etc., and any specifics about the chart, such as number of slides, color of bars, etc..>. RequestedFormat: FileType: PPT.'
+
+                                        2. Valid File Request:
+                                            - User Prompt: 'Save this as a PNG.'
+                                            - Response: '<Results from chat history including the data returned from the SQL query, the type of chart to be generated, such as bar chart, pie chart, histogram, etc., and any specifics about the chart, such as number of slides, color of bars, etc..>. RequestedFormat: FileType: PPT.'
+
+                                        3. Invalid File Request:
+                                            - User Prompt: 'Save this as a PBX.'
+                                            - Response: 'InvalidFileType: Please choose from the following file types: PNG, PPT, DOC, HTML, JPEG, JPG, GIF, PNG, XLS, or PDF.'
+
+                                        4. Unrelated Request:
+                                            - User Prompt: 'Hello'
+                                            - Response: 'Unrelated: Hello!'
+
+                                        5. Unrelated Request:
+                                            - User Prompt: 'Thank you'
+                                            - Response: 'Unrelated: You're welcome!'
+                                    ";
+
+                        // it's possible the user prompt is a follow up to save a file of a proper type, or
+                        // any generic unrelated message such as "Hello", so we need to build the seystem message accordingly.
+                        _chatHistory.AddSystemMessage(systemPrompt);
+
                         break;
                     }
             }
@@ -207,110 +275,75 @@
                                     The database schema is described according to the following json schema:
                                     {jsonSchema}";
 
-                _chatHistory.AddSystemMessage(systemPrompt);
-                _chatHistory.AddUserMessage(chatRequest.prompt);
+                _chatHistory.AddSystemMessage(systemPrompt);                
             }
+
+            // Add all chat history to the user message so SK has context of this session's conversation
+            List<Message> messages = await _azureCosmosDbService.GetSessionMessagesAsync(chatRequest.sessionId);
+            foreach (Message msg in messages)
+            {
+                _chatHistory.AddUserMessage(msg.Prompt);
+            }
+
+            // add the current user prompt
+            _chatHistory.AddUserMessage(chatRequest.prompt);
 
             ChatMessageContent result = null;
 
-            if (!intent.Equals("not_found"))
+            /******** Create message for this session in cosmos DB ********/
+            var message = new Message()
             {
-                var session = new Session
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    SessionId = chatRequest.sessionId,
-                    Name = chatRequest.chatName,
-                    Type = "session",
-                    Timestamp = DateTime.UtcNow
-                };
+                Id = Guid.NewGuid().ToString(),
 
-                var message = new Message()
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    
-                    Type = "message",
-                    Sender = "user",
-                    SessionId = chatRequest.sessionId,
-                    TimeStamp = DateTime.UtcNow,
-                    Prompt = chatRequest.prompt,
-                };
+                Type = "message",
+                Sender = "user",
+                SessionId = chatRequest.sessionId,
+                TimeStamp = DateTime.UtcNow,
+                Prompt = chatRequest.prompt,
+            };
 
-                // insert session
-                await _azureCosmosDbService.InsertSessionAsync(session);
-                // Insert user prompt
-                await _azureCosmosDbService.InsertMessageAsync(message);
+            // Insert user prompt
+            await _azureCosmosDbService.InsertMessageAsync(message);
+            /******** Create chat session in cosmos DB ********/
+            
+            result = await _chat.GetChatMessageContentAsync
+                (
+                    _chatHistory,
+                    executionSettings: new OpenAIPromptExecutionSettings { Temperature = 0.8, TopP = 0.0, ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions },
+                    kernel: _kernel
+                );
 
-                result = await _chat.GetChatMessageContentAsync
-                    (
-                        _chatHistory,
-                        executionSettings: new OpenAIPromptExecutionSettings { Temperature = 0.8, TopP = 0.0, ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions },
-                        kernel: _kernel
-                    );
+            bool unrelatedRequest = false;
 
-                Console.WriteLine(result.Content);
-
-                // insert systems response
-                message = new Message()
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Type = "message",
-                    Sender = "system",
-                    SessionId = chatRequest.sessionId,
-                    TimeStamp = DateTime.UtcNow,
-                    Prompt = result.Content,
-                };
-
-                await _azureCosmosDbService.InsertMessageAsync(message);
-
-                if (renderImageWithResponse && !result.Content.Contains("InvalidFileType"))
-                {
-                    Console.WriteLine("Running Assistant to generate file.");
-                    
-                    var assistantName = $"Assistant - {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
-                    (string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files requested by the user.", $"Create a file based on the following data: {result.Content}. The file will be built as specified from the following user prompt: {chatRequest.prompt}");
-
-                    Console.WriteLine("End running assistant to generate file.");
-
-                    if (data != null)
-                    {
-                        // Extract file type from response. If the filetype isn't specified, we are only rendering
-                        // the image in the respnose and not saving it
-                        var fileType = result.Content.Contains("FileType: ") ? result.Content.Substring(result.Content.IndexOf("FileType: ") + "FileType: ".Length) : String.Empty;
-
-                        if (!fileType.Equals(String.Empty))
-                        {
-                            using (MemoryStream ms = new MemoryStream(data, false))
-                            {
-                                await _azureBlobService.UploadFromStreamAsync(ms, $"{assistantName}.{fileType}");
-                            }
-
-                            var sasUri = _azureBlobService.GetBlobSasUri($"{assistantName}.{fileType}");
-                            response.SasUri = sasUri.ToString();
-                        }
-                    }
-                    else
-                    {
-                       Console.WriteLine("No data returned from assistant.");
-                    }
-                                        
-                    //await File.WriteAllBytesAsync($"C:\\Temp\\{assistantName}.png", data);
-                }                
-            }
-            else
+            // if the request is unrelated, we need to set a flag so we do not attempt to generate a file and just respond to the user with a generic response
+            // that the LLM will decide
+            if (result.Content.Contains("Unrelated"))
             {
-                // TODO: Get chat history from cosmos db based on sessionId
-                _chatHistory.AddSystemMessage("You are responsible to look in the history and understand what the user is asking about.");
-                _chatHistory.AddUserMessage(chatRequest.prompt);
+                unrelatedRequest = true;
 
-                result = await _chat.GetChatMessageContentAsync
-                    (
-                        _chatHistory,
-                        executionSettings: new OpenAIPromptExecutionSettings { Temperature = 0.8, TopP = 0.0, ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions },
-                        kernel: _kernel
-                    );
-
-                Console.WriteLine(result.Content);
+                // strip out the word "Unrelated:" so the answer is in natural language
+                result.Content = result.Content.Substring(result.Content.IndexOf(":") + 1, result.Content.Length - result.Content.IndexOf(":") - 1).Trim();
             }
+
+            Console.WriteLine(result.Content);
+
+            // insert systems response
+            message = new Message()
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "message",
+                Sender = "system",
+                SessionId = chatRequest.sessionId,
+                TimeStamp = DateTime.UtcNow,
+                Prompt = result.Content,
+            };
+
+            await _azureCosmosDbService.InsertMessageAsync(message);
+
+            if (renderImageWithResponse && !unrelatedRequest && !result.Content.Contains("InvalidFileType"))
+            {
+                response.SasUri = await GenerateAssistantFile(result, chatRequest.prompt);
+            }                
 
             // TODO: wrap the byte string in HTML as part of the response so it can be rendered in the browser
             response.ChatResponse = result.Content;
@@ -367,6 +400,49 @@
             }*/
 
             return new OkObjectResult(response);
+        }
+
+        /// <summary>
+        /// Generates a file using the Assistants SDK.
+        /// </summary>
+        /// <param name="result">The SAS URI to the created file</param>
+        /// <returns></returns>
+        private async Task<string> GenerateAssistantFile(ChatMessageContent result, string prompt)
+        {
+            string strSasUri = string.Empty;
+
+            Console.WriteLine("Running Assistant to generate file.");
+
+            var assistantName = $"Assistant - {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
+            (string assistantId, byte[] data) = await _azureAIAssistantService.RunAssistantAsync(assistantName, "You are an AI Assistant. Your job is to generate files requested by the user.", $"Create a file based on the following data: {result.Content}. The file will be built as specified from the following user prompt: {prompt}");
+
+            Console.WriteLine("End running assistant to generate file.");
+
+            if (data != null)
+            {
+                // Extract file type from response. If the filetype isn't specified, we are only rendering
+                // the image in the respnose and not saving it
+                var fileType = result.Content.Contains("FileType: ") ? result.Content.Substring(result.Content.IndexOf("FileType: ") + "FileType: ".Length) : String.Empty;
+
+                if (!fileType.Equals(String.Empty))
+                {
+                    using (MemoryStream ms = new MemoryStream(data, false))
+                    {
+                        await _azureBlobService.UploadFromStreamAsync(ms, $"{assistantName}.{fileType}");
+                    }
+
+                    var sasUri = _azureBlobService.GetBlobSasUri($"{assistantName}.{fileType}");
+                    strSasUri = sasUri.ToString();
+                }
+            }
+            else
+            {
+                Console.WriteLine("No data returned from assistant.");
+            }
+
+            //await File.WriteAllBytesAsync($"C:\\Temp\\{assistantName}.png", data);
+
+            return strSasUri;
         }
     }
 }
