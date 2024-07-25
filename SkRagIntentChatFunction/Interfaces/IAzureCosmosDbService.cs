@@ -14,6 +14,7 @@ namespace SkRagIntentChatFunction.Interfaces
         Task<List<Session>> GetSessionsAsync();
         Task<List<Message>> GetSessionMessagesAsync(string sessionId);
         Task<Session> UpdateSessionAsync(Session session);
+        Task<bool> SessionExists(string sessionId);
         Task<Session> GetSessionAsync(string sessionId);
         Task UpsertSessionBatchAsync(params dynamic[] messages);
         Task DeleteSessionAndMessagesAsync(string sessionId);
