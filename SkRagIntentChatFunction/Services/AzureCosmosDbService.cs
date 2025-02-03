@@ -1,4 +1,5 @@
-﻿using Microsoft.Azure.Cosmos;
+﻿using Azure.Identity;
+using Microsoft.Azure.Cosmos;
 using SkRagIntentChatFunction.Interfaces;
 using SkRagIntentChatFunction.Models;
 
@@ -8,9 +9,12 @@ namespace SkRagIntentChatFunction.Services
     {
         private readonly Container _chatContainer;
 
-        public AzureCosmosDbService(string connectionString)
+        public AzureCosmosDbService(string accountEndpoint)
         {
-            var client = new CosmosClient(connectionString);
+            var client = new CosmosClient(accountEndpoint, new DefaultAzureCredential(new DefaultAzureCredentialOptions()
+            {
+                TenantId = Environment.GetEnvironmentVariable("TenantId", EnvironmentVariableTarget.Process) ?? string.Empty
+            }));
             var database = client.GetDatabase("ChatHistoryDB")!;
             var chatContainer = database.GetContainer("ChatHistoryContainer");
 
@@ -63,8 +67,7 @@ namespace SkRagIntentChatFunction.Services
             if (response.HasMoreResults)
             {
                 FeedResponse<Session> results = await response.ReadNextAsync();
-                
-                if (results.Count > 0 )
+                if (results.Count > 0)
                 {
                     sessionExists = true;
                 }

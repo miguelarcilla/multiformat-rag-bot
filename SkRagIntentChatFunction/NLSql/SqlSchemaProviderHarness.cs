@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 using System.Data.Common;
-using System.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using SemanticKernel.Data.Nl2Sql.Library.Schema;
 
 namespace SemanticKernel.Data.Nl2Sql.Harness;
